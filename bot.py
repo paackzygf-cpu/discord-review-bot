@@ -11,6 +11,7 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CUSTOMER_ROLE_ID = 1526624357370171423
+REVIEWS_CHANNEL_ID = 1526624416073777253
 LAST_VOUCH_MESSAGE_ID = None
 
 intents = discord.Intents.default()
@@ -96,12 +97,12 @@ class VouchModal(discord.ui.Modal):
         embed.add_field(name="By", value=interaction.user.mention, inline=True)
         embed.add_field(name="Timestamp", value=f"<t:{int(interaction.created_at.timestamp())}:R>", inline=True)
         embed.set_thumbnail(url=interaction.user.avatar.url)
-        embed.set_footer(text="Powered by Review Bot | Claude Rewrite")
         
-        await interaction.followup.send(embed=embed)
+        reviews_channel = bot.get_channel(REVIEWS_CHANNEL_ID)
+        if reviews_channel:
+            await reviews_channel.send(embed=embed)
         
-        # Delete old vouch reminder and send new one
-        await self.parent_view.send_vouch_reminder(interaction.channel)
+        await interaction.response.send_message("✅ Review posted in #reviews!", ephemeral=True)
 
 class VouchButton(discord.ui.View):
     def __init__(self, channel):
@@ -119,27 +120,6 @@ class VouchButton(discord.ui.View):
             return
         
         await interaction.response.send_modal(VouchModal(self))
-    
-    async def send_vouch_reminder(self, channel):
-        global LAST_VOUCH_MESSAGE_ID
-        
-        # Delete old message
-        if LAST_VOUCH_MESSAGE_ID:
-            try:
-                old_msg = await channel.fetch_message(LAST_VOUCH_MESSAGE_ID)
-                await old_msg.delete()
-            except:
-                pass
-        
-        # Send new one
-        embed = discord.Embed(
-            title="WANT TO LEAVE A VOUCH ?",
-            description="Use the button below.\nChoose a rating, write your review, and add screenshots if needed.",
-            color=discord.Color.gold()
-        )
-        
-        msg = await channel.send(embed=embed, view=self)
-        LAST_VOUCH_MESSAGE_ID = msg.id
 
 @bot.tree.command(name="vouch", description="Leave a review with stars and optional screenshot")
 @app_commands.describe(
@@ -186,20 +166,28 @@ async def vouch(
     if screenshot:
         embed.set_image(url=screenshot.url)
     
-    embed.set_footer(text="Powered by Review Bot | Claude Rewrite")
+    reviews_channel = bot.get_channel(REVIEWS_CHANNEL_ID)
+    if reviews_channel:
+        await reviews_channel.send(embed=embed)
     
-    await interaction.followup.send(embed=embed)
-    
-    # Send reminder
-    view = VouchButton(interaction.channel)
-    await view.send_vouch_reminder(interaction.channel)
+    await interaction.response.send_message("✅ Review posted in #reviews!", ephemeral=True)
 
 @bot.tree.command(name="init_vouch", description="Initialize the vouch panel (admin only)")
 @app_commands.checks.has_permissions(manage_messages=True)
 async def init_vouch(interaction: discord.Interaction):
-    view = VouchButton(interaction.channel)
-    await view.send_vouch_reminder(interaction.channel)
-    await interaction.response.send_message("✅ Vouch panel initialized!", ephemeral=True)
+    reviews_channel = bot.get_channel(REVIEWS_CHANNEL_ID)
+    if not reviews_channel:
+        await interaction.response.send_message("❌ Reviews channel not found", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title="WANT TO LEAVE A VOUCH ?",
+        description="Use the button below.\nChoose a rating, write your review, and add screenshots if needed.",
+        color=discord.Color.gold()
+    )
+    
+    await reviews_channel.send(embed=embed, view=VouchButton(reviews_channel))
+    await interaction.response.send_message("✅ Vouch panel initialized in #reviews!", ephemeral=True)
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
